@@ -155,6 +155,33 @@ func POFileToGMO(poFilePath string) ([]byte, error) {
 	return gmo.Bytes(), nil
 }
 
+
+func CompressTable(input []byte) ([]byte, error) {
+fmt.Printf("compress")
+	process := exec.Command(
+		"lz4",
+		"--no-frame-crc",
+		"-B7",
+		"-9",
+	)
+	var o bytes.Buffer
+	process.Stdin = bytes.NewReader(input)
+	process.Stdout = &o
+	process.Stderr = os.Stderr
+	if err := process.Start(); err != nil {
+		return nil, err
+	}
+	if err := process.Wait(); err != nil {
+		return nil, err
+	}
+	p := o.Bytes()
+	magic := binary.LittleEndian.Uint32(p[0:])
+	p = o.Bytes()[4+3:]
+	block_length := binary.LittleEndian.Uint32(p[0:])
+
+	return p[4:4+block_length], nil
+}
+
 type TranslationEntry struct {
 	Untranslated []byte
 	Translated   []byte
@@ -194,6 +221,7 @@ type TranslationTable struct {
 	ConstHashOffsetBasis uint64
 	MappingTable         []TranslationTableMappingEntry
 	StringTable          []byte
+	CompressedTable      []byte
 	Locales              []string
 	LocaleTable          []byte
 }
@@ -319,6 +347,10 @@ retry:
 		}
 	}
 
+	fmt.Printf("Compressing %d", len(table.StringTable))
+	table.CompressedTable, _ = CompressTable(table.StringTable)
+	fmt.Printf("Compressed == %d", len(table.CompressedTable))
+
 	return table
 }
 
@@ -387,6 +419,7 @@ using namespace std::literals::string_view_literals;
 	fmt.Fprintf(writer, "constexpr std::uint32_t translation_table_locale_count = %d;\n", len(table.Locales))
 	fmt.Fprintf(writer, "constexpr std::uint16_t translation_table_mapping_table_size = %d;\n", len(table.MappingTable))
 	fmt.Fprintf(writer, "constexpr std::size_t translation_table_string_table_size = %d;\n", len(table.StringTable))
+	fmt.Fprintf(writer, "constexpr std::size_t translation_table_compressed_table_size = %d;\n", len(table.CompressedTable))
 	fmt.Fprintf(writer, "constexpr std::size_t translation_table_locale_table_size = %d;\n", len(table.LocaleTable))
 	fmt.Fprintf(writer, "\n")
 
@@ -471,9 +504,17 @@ const translation_table translation_data = {
 		`        },
 
     // clang-format off
+	/*
     .string_table =
 `)
 	DumpStringTable(table.StringTable, "        u8", writer)
+writer.WriteString(
+		`        ,
+		*/
+    // clang-format off
+    .byte_table =
+`)
+	DumpByteTable(table.CompressedTable, "        ", writer)
 
 	writer.WriteString(
 		`,
@@ -539,6 +580,30 @@ func DumpStringTable(strings []byte, linePrefix string, writer *bufio.Writer) {
 	}
 }
 
+func min(a, b int) int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+func DumpByteTable(byteArray []byte, linePrefix string, writer *bufio.Writer) {
+	writer.WriteString(linePrefix)
+    writer.WriteString("{\n")
+
+	i:= 0
+	for (i < len(byteArray)) {
+		writer.WriteString(linePrefix)
+		lineLength := min(32, len(byteArray) - i)
+		DumpByteLiteralBody(byteArray, i, i + lineLength, writer)
+		i += lineLength
+    	writer.WriteRune('\n')
+	}
+	writer.WriteString(linePrefix)
+	writer.WriteString("}")
+}
+
+
 func DumpStringLiteralBody(s string, writer *bufio.Writer) {
 	for _, c := range s {
 		if c < 0x20 || c >= 0x7f {
@@ -549,6 +614,12 @@ func DumpStringLiteralBody(s string, writer *bufio.Writer) {
 		} else {
 			writer.WriteRune(c)
 		}
+	}
+}
+
+func DumpByteLiteralBody(byteArray []byte, s int, e int, writer *bufio.Writer) {
+	for i := s ; i < e; i++ {
+		fmt.Fprintf(writer, `0x%02x, `, byteArray[i])
 	}
 }
 

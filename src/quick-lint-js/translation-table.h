@@ -11,14 +11,20 @@
 #include <quick-lint-js/translation-table-generated.h>
 
 namespace quick_lint_js {
-// See tools/compile-translations.go for documentation on the format.
+char8* decompress_string_table();
+
+    // See tools/compile-translations.go for documentation on the format.
 struct translation_table {
   struct mapping_entry {
     std::uint32_t string_offsets[translation_table_locale_count + 1];
   };
 
   mapping_entry mapping_table[translation_table_mapping_table_size];
-  char8 string_table[translation_table_string_table_size];
+  static char8* string_table() {
+    static char8* string_table = decompress_string_table();
+    return string_table;
+  }
+  char8 byte_table[translation_table_string_table_size];
   char locale_table[translation_table_locale_table_size];
 
   static constexpr std::uint16_t unallocated_mapping_index = 0;

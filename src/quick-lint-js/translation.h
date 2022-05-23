@@ -49,8 +49,7 @@ class translatable_message {
  public:
   /*implicit*/ constexpr translatable_message()
       : translation_table_mapping_index_(
-            translation_table::mapping_index_for_untranslated_string(
-                std::string_view())) {}
+            translation_table::unallocated_mapping_index) {}
 
   explicit QLJS_CONSTEVAL translatable_message(const char* raw_message,
                                                int length)

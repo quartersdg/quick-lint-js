@@ -20,6 +20,7 @@ using namespace std::literals::string_view_literals;
 constexpr std::uint32_t translation_table_locale_count = 4;
 constexpr std::uint16_t translation_table_mapping_table_size = 206;
 constexpr std::size_t translation_table_string_table_size = 36204;
+constexpr std::size_t translation_table_compressed_table_size = 13653;
 constexpr std::size_t translation_table_locale_table_size = 24;
 
 QLJS_CONSTEVAL std::uint16_t translation_table_const_hash_table_look_up(
@@ -345,8 +346,7 @@ QLJS_CONSTEVAL std::uint16_t translation_table_const_hash_table_look_up(
   std::uint64_t hash = hash_fnv_1a_64(untranslated, 14695981039346656130ULL);
   std::uint64_t table_size = 308;
   for (std::uint64_t attempt = 0; attempt <= 4; ++attempt) {
-    const const_hash_entry& hash_entry =
-        const_hash_table[(hash + attempt * attempt) % table_size];
+    const const_hash_entry& hash_entry = const_hash_table[(hash + attempt*attempt) % table_size];
     if (hash_entry.mapping_table_index == 0) {
       break;
     }

@@ -68,6 +68,55 @@ void initialize_locale() {
                  std::strerror(errno));
   }
 }
+
+
+void copy_bytes(int length, unsigned char*& o, const unsigned char*& p) {
+  while (length--) {
+    *o++ = *p++;
+  }
+}
+
+void extend_length(const unsigned char*& p, int& length) {
+  if (length == 15) {
+    int more = 0;
+    do {
+      more = *p++;
+      length += more;
+    } while (more == 255);
+  }
+}
+
+size_t lz4_decompress_block(const unsigned char* in_ptr, unsigned char* dest,
+                            int block_size) {
+  const unsigned char* block_end = in_ptr + block_size;
+  unsigned char* out_ptr = (unsigned char*)dest;
+
+  for (;;) {
+    uint8_t token = *in_ptr++;
+
+    int literal_length = token >> 4;
+    extend_length(in_ptr, literal_length);
+    copy_bytes(literal_length, out_ptr, in_ptr);
+
+    if (in_ptr == block_end) {
+      goto end;
+    }
+
+    int offset = in_ptr[0] | (in_ptr[1] << 8);
+    in_ptr += 2;
+
+    int match_length = token & 0x0f;
+
+    extend_length(in_ptr, match_length);
+    match_length += 4;
+    const unsigned char* match_ptr = out_ptr - offset;
+    copy_bytes(match_length, out_ptr, match_ptr);
+  }
+
+end:
+  return out_ptr - dest;
+}
+
 }
 
 const char8* translate(const translatable_message& message) {
@@ -131,11 +180,18 @@ const char* translatable_messages::translate(
     const translation_table::mapping_entry& mapping =
         translation_data.mapping_table[mapping_index];
     std::uint32_t string_offset = mapping.string_offsets[this->locale_index_];
-    return reinterpret_cast<const char*>(translation_data.string_table +
+    return reinterpret_cast<const char*>(translation_data.string_table() +
                                          string_offset);
   } else {
     return message.c_str();
   }
+}
+
+char8* decompress_string_table() {
+  char8* dest = new char8[translation_table_string_table_size];
+  lz4_decompress_block((const unsigned char*)translation_data.byte_table, (unsigned char*)dest,
+             translation_table_compressed_table_size);
+  return dest;
 }
 }
 
